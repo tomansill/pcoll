@@ -7,21 +7,7 @@
 #include <vector>
 #include <unordered_set>
 
-#if __has_include("filesystem")
-#define FS_EXPERIMENTAL 0
-#include <filesystem>
-namespace filesystem = std::filesystem;
-#elif __has_include("boost/filesystem.hpp")
-#define FS_EXPERIMENTAL 1
-#include <boost/filesystem.hpp>
-namespace filesystem = boost::filesystem;
-#elif __has_include("experimental/filesystem")
-#define FS_EXPERIMENTAL 2
-#include <experimental/filesystem>
-namespace filesystem = std::experimental::filesystem;
-#else
-#warning "No filesystem library!"
-#endif
+#include "filesystem.hpp"
 
 using filesystem::path;
 using filesystem::exists;
@@ -169,12 +155,20 @@ int main(int argc, char* argv[]){
         }
     }
 
-	// Construct the pcoll
-	Pcoll pcoll(percentage, directories, exclude);
-
     // Start the hasher
-	pcoll.process(quiet, thread_count);
-	//for(auto entry : same){
-	//	cout << "counts: " << entry.second << "\tfile: " << entry.first << endl;
-	//}
+	auto results = thread ?
+		Pcoll::find_similar_images(directories, exclude, quiet, percentage, thread_count) :
+		Pcoll::find_similar_images(directories, exclude, quiet, percentage, Utility::get_default_cores_count());
+
+	// Show results
+	unsigned int count = 1;
+	for(auto& entry : results.collisions){
+		cout << count++ << "/" << results.collisions.size() << " images: " << entry.second.size() << " - " << Utility::try_to_normalize_path(entry.first) << endl;
+		unsigned int inner_count = 1;
+		for(auto& inner : entry.second){
+			cout << "\t" << inner_count++ << "/" << entry.second.size() << " " << ((int)(inner.second * 100)) << "% - " << Utility::try_to_normalize_path(inner.first) <<  endl;
+		}
+		cout << endl;
+	}
+	cout << "Total similar files found: " << results.files << endl;
 }

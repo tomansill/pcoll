@@ -7,6 +7,10 @@ set(CMAKE_EXE_LINKER_FLAGS "-lboost_filesystem -lboost_system -lssl -lcrypto -lo
 add_compile_options(-g -gdwarf-2 -Wall -Wextra -Weffc++ -pedantic)
 
 set(SOURCE_FILES
+	src/utility.cpp
+	src/task_queue.cpp
+	src/diffhash.cpp
+	src/pcoll_database.cpp
     src/pcoll.cpp
 	src/pcoll_main.cpp
 	)
