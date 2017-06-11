@@ -27,7 +27,10 @@ unsigned int Utility::get_default_cores_count(){
 cv::Mat Utility::open_image_path(const std::string& path){
 	using namespace cv;
     cv::Mat image = imread(path, CV_LOAD_IMAGE_COLOR);
-    if(!image.data) throw Pexception("Cannot load image at file path '" + path + "!");
+    if(!image.data){
+		throw Pexception("Cannot load image at file path '" + path + "!");
+		image.release();
+	}
     return image;
 }
 
@@ -94,9 +97,6 @@ void Synchronized_Output::print(const string& message){
 	// Lock the output
 	unique_lock<std::mutex> lock(_cout_mutex);
 
-	string str = message + " t: ";
-	str += std::to_string(duration);
-
 	// Erase previous string
 	if(_print_length != 0){
 		std::cout << "\r";
@@ -105,10 +105,10 @@ void Synchronized_Output::print(const string& message){
 	}
 
 	// Get length of current string
-	_print_length = str.length();
+	_print_length = message.length();
 
 	// Print the string
-	std::cout << str << "\r" << std::flush;
+	std::cout << message << "\r" << std::flush;
 
 	_last_print_time = steady_clock::now();
 }

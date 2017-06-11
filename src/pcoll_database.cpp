@@ -1,5 +1,6 @@
 #include "pcoll_database.hpp"
 #include "diffhash.hpp"
+#include "cryptohash.hpp"
 #include "task_queue.hpp"
 #include "utility.hpp"
 
@@ -15,19 +16,29 @@ using std::chrono::milliseconds;
 using std::string;
 
 Pcoll_Database::Pcoll_Database():
+	_total(0),
 	_dhash_database(),
-	_dhash_database_mutex()
+	_dhash_database_mutex(),
+	_chash_database(),
+	_chash_database_mutex()
 {}
 
 void Pcoll_Database::insert(string& path){
-	std::bitset<64> hash = Difference_Hash::compute_hash(path);
-	std::unique_lock<std::shared_mutex> lock(_dhash_database_mutex);
-	_dhash_database.insert(std::make_pair(path, hash));
+	{
+		string hash = Crypto_Hash::compute_hash(path);
+		std::unique_lock<std::shared_mutex> lock(_chash_database_mutex);
+		_chash_database.insert(std::make_pair(path, hash));
+	}
+	{
+		std::bitset<64> hash = Difference_Hash::compute_hash(path);
+		std::unique_lock<std::shared_mutex> lock(_dhash_database_mutex);
+		_dhash_database.insert(std::make_pair(path, hash));
+	}
+	_total++;
 }
 
 unsigned int Pcoll_Database::size() {
-	std::shared_lock<std::shared_mutex> lock(_dhash_database_mutex);
-	return _dhash_database.size();
+	return _total++;
 }
 
 Results Pcoll_Database::compile_similarity_results(bool quiet, float percentage){
@@ -118,31 +129,56 @@ Results Pcoll_Database::compile_similarity_results(bool quiet, float percentage,
 				std::pair<string, string>* work_pair = task_queue.poll();
 
 				// Get hash one
-				bitset<64> hash_one;
+				string c_hash_one;
 				{
-					std::shared_lock<std::shared_mutex> lock(_dhash_database_mutex);
-					auto search = _dhash_database.find(work_pair->first);
-					if(search == _dhash_database.end()) throw Pexception("FATAL ERROR: '" + work_pair->first + "' not found in the hash database!");
-					hash_one = search->second;
+					std::shared_lock<std::shared_mutex> lock(_chash_database_mutex);
+					auto search = _chash_database.find(work_pair->first);
+					if(search == _chash_database.end()) throw Pexception("FATAL ERROR: '" + work_pair->first + "' not found in the hash database!");
+					c_hash_one = search->second;
 				}
 
 				// Get hash two
-				bitset<64> hash_two;
+				string c_hash_two;
 				{
-					std::shared_lock<std::shared_mutex> lock(_dhash_database_mutex);
-					auto search = _dhash_database.find(work_pair->second);
-					if(search == _dhash_database.end()) throw Pexception("FATAL ERROR: '" + work_pair->second + "' not found in the hash database!");
-					hash_two = search->second;
+					std::shared_lock<std::shared_mutex> lock(_chash_database_mutex);
+					auto search = _chash_database.find(work_pair->second);
+					if(search == _chash_database.end()) throw Pexception("FATAL ERROR: '" + work_pair->second + "' not found in the hash database!");
+					c_hash_two = search->second;
 				}
 
-				// Compare hashes
-				float result = Difference_Hash::compare_hashes(hash_one, hash_two);
-
-				// Check if within acceptable level of similarity
-				if(result > percentage){
+				// Check if identical
+				if(Crypto_Hash::compare_hashes(c_hash_one, c_hash_two)){
 					//collisions
-					insert_collision(work_pair->first, work_pair->second, result);
-					insert_collision(work_pair->second, work_pair->first, result);
+					insert_collision(work_pair->first, work_pair->second, 1.0f);
+					insert_collision(work_pair->second, work_pair->first, 1.0f);
+				}else{
+					// Get hash one
+					bitset<64> hash_one;
+					{
+						std::shared_lock<std::shared_mutex> lock(_dhash_database_mutex);
+						auto search = _dhash_database.find(work_pair->first);
+						if(search == _dhash_database.end()) throw Pexception("FATAL ERROR: '" + work_pair->first + "' not found in the hash database!"); // replace Pexception to something else
+						hash_one = search->second;
+					}
+
+					// Get hash two
+					bitset<64> hash_two;
+					{
+						std::shared_lock<std::shared_mutex> lock(_dhash_database_mutex);
+						auto search = _dhash_database.find(work_pair->second);
+						if(search == _dhash_database.end()) throw Pexception("FATAL ERROR: '" + work_pair->second + "' not found in the hash database!");
+						hash_two = search->second;
+					}
+
+					// Compare hashes
+					float result = Difference_Hash::compare_hashes(hash_one, hash_two);
+
+					// Check if within acceptable level of similarity
+					if(result > percentage){
+						//collisions
+						insert_collision(work_pair->first, work_pair->second, result);
+						insert_collision(work_pair->second, work_pair->first, result);
+					}
 				}
 
 				// Decrement the task count
@@ -153,9 +189,9 @@ Results Pcoll_Database::compile_similarity_results(bool quiet, float percentage,
 			}
 
 			// If nothing is in the queue, wait a bit for other threads to populate it
-			if(!file && !pair)
+			if(!file && !pair){
 				sleep_for(milliseconds(10)); // Relax for a bit
-			else{
+			}else{
 				unsigned int size = 0;
 				{
 					std::unique_lock<std::mutex> lock(collisions_mutex);

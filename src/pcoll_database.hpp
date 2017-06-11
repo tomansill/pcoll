@@ -28,9 +28,15 @@ public:
 private:
 	void print_progress(const unsigned int task_count, const unsigned int collisions);
 
+	unsigned int _total;
+
 	/** difference hash database */
 	std::unordered_map<string, std::bitset<64>> _dhash_database;
 	std::shared_mutex _dhash_database_mutex;
+
+	/** crypto hash database */
+	std::unordered_map<string, std::string> _chash_database;
+	std::shared_mutex _chash_database_mutex;
 };
 
 #endif //__PCOLL_DATABASE__

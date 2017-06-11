@@ -10,6 +10,7 @@ set(SOURCE_FILES
 	src/utility.cpp
 	src/task_queue.cpp
 	src/diffhash.cpp
+	src/cryptohash.cpp
 	src/pcoll_database.cpp
     src/pcoll.cpp
 	src/pcoll_main.cpp

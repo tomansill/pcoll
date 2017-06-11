@@ -5,10 +5,13 @@
 #include <opencv2/imgproc/imgproc.hpp>
 
 bitset<64> Difference_Hash::compute_hash(const string& path){
-	return compute_hash(Utility::open_image_path(path));
+	cv::Mat image = Utility::open_image_path(path);
+	bitset<64> hash = compute_hash(image);
+	image.release();
+	return hash;
 }
 
-bitset<64> Difference_Hash::compute_hash(const cv::Mat& image){
+bitset<64> Difference_Hash::compute_hash(const cv::Mat image){
 	using namespace cv;
 
 	// step 1: convert to grayscale
@@ -45,6 +48,8 @@ bitset<64> Difference_Hash::compute_hash(const cv::Mat& image){
 			previous_pixel = pixel;
 		}
 	}
+
+	work.release();
 
 	return hash;
 }
