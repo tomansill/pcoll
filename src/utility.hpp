@@ -7,7 +7,11 @@
 
 #include "filesystem.hpp"
 
-#include <opencv2/core/core.hpp>
+#include <OpenImageIO/imageio.h>
+#include <OpenImageIO/imagebuf.h>
+
+using OIIO::ImageInput;
+using OIIO::ImageBuf;
 
 /** PColl Exception
  *  @author Thomas Ansill
@@ -65,7 +69,11 @@ class Utility {
 public:
 	static Synchronized_Output sout;
 
-	static cv::Mat open_image_path(const std::string& path);
+	static ImageInput* open_image_path(const std::string& path);
+
+    static ImageBuf* get_image_buffer(const std::string& path);
+
+    static bool is_image(const std::string& path);
 
 	static unsigned int get_default_cores_count();
 

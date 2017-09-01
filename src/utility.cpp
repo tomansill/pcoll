@@ -4,9 +4,6 @@
 #include <thread>
 #include <regex>
 
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
-
 using std::string;
 using std::unique_lock;
 using std::chrono::steady_clock;
@@ -24,14 +21,48 @@ unsigned int Utility::get_default_cores_count(){
 	return num_threads == 0 ? 1 : num_threads;
 }
 
-cv::Mat Utility::open_image_path(const std::string& path){
-	using namespace cv;
-    cv::Mat image = imread(path, CV_LOAD_IMAGE_COLOR);
-    if(!image.data){
-		throw Pexception("Cannot load image at file path '" + path + "!");
-		image.release();
-	}
-    return image;
+bool Utility::is_image(const std::string& path){
+
+	OIIO::string_view path_view(path);
+
+	// Construct the image data
+	ImageInput* image;
+
+	// Create image
+	image = ImageInput::create(path_view);
+
+	// If failed to open, probably not a valid image
+	if(!image) return false;
+
+	// Get result
+	bool result = image->valid_file(path_view);
+
+	// Destroy the obj
+	ImageInput::destroy(image);
+
+	return result;
+}
+
+ImageInput* Utility::open_image_path(const std::string& path){
+	OIIO::string_view path_view(path);
+
+	// Construct the image data
+	ImageInput* image;
+
+	// Try to open image
+	image = ImageInput::open(path_view);
+	if(!image) throw Pexception("Failed to open image: " + path);
+
+	return image;
+}
+
+ImageBuf* Utility::get_image_buffer(const std::string& path){
+	OIIO::string_view path_view(path);
+
+	// Construct the image data
+	ImageBuf* image = new ImageBuf(path_view);
+
+	return image;
 }
 
 string Utility::try_to_convert_to_absolute_path(const string& path){

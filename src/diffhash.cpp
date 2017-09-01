@@ -1,64 +1,96 @@
 #include "diffhash.hpp"
 #include "utility.hpp"
+#include <OpenImageIO/imagebufalgo.h>
 
-#include <opencv2/highgui/highgui.hpp>
-#include <opencv2/imgproc/imgproc.hpp>
-
-bitset<64> Difference_Hash::compute_hash(const string& path){
-	cv::Mat image = Utility::open_image_path(path);
-	bitset<64> hash = compute_hash(image);
-	image.release();
-	return hash;
+Difference_Hash::Difference_Hash(const string& path) : _hash(nullptr) {
+	ImageBuf* img = Utility::get_image_buffer(path);
+	_hash = compute_hash(*img);
+	delete img;
 }
 
-bitset<64> Difference_Hash::compute_hash(const cv::Mat image){
-	using namespace cv;
+Difference_Hash::Difference_Hash(const ImageBuf& image) : _hash(compute_hash(image)) {}
 
-	// step 1: convert to grayscale
-	Mat work;
-	cvtColor(image, work, CV_BGR2GRAY);
+Difference_Hash::Difference_Hash(const bitset<64>& difference_hash) : _hash(new bitset<64>(difference_hash)) {}
 
-	// step 2: shrink image to 8x8 so there are 64 pixels
-	Size size(8, 8);
-	resize(work, work, size);
+Difference_Hash::~Difference_Hash(){
+	delete _hash;
+}
+
+Difference_Hash::Difference_Hash(const Difference_Hash& other) : _hash(nullptr) {
+	if(this != &other)
+		_hash = new bitset<64>(*(other._hash));
+}
+
+Difference_Hash::Difference_Hash(Difference_Hash&& other) : _hash(nullptr) {
+	if(this != &other)
+		_hash = std::move(other._hash);
+}
+
+Difference_Hash& Difference_Hash::operator=(const Difference_Hash& other){
+	if(this != &other)
+		_hash = new bitset<64>(*(other._hash));
+	return *this;
+}
+
+Difference_Hash& Difference_Hash::operator=(Difference_Hash&& other){
+	if(this != &other){
+		delete _hash;
+		_hash = std::move(other._hash);
+	}
+	return *this;
+}
+
+bool Difference_Hash::operator==(const Difference_Hash& other) const{
+	return *this == other;
+}
+
+float Difference_Hash::compare(const Difference_Hash& other) const{
+	return compare(*this, other);
+}
+
+bitset<64>* Difference_Hash::compute_hash(const ImageBuf& image){
+
+	// step 1: shrink image to 8x8 so there are 64 pixels
+	ImageBuf resized;
+	ROI roi(0, 8, 0, 8, 0, 1, 0, image.nchannels()); // define 8x8 image
+	ImageBufAlgo::resample(resized, image, NULL, roi); // resize
 
 	// step 3: compute difference
-	bitset<64> hash;
+	bitset<64>* hash = new bitset<64>();
 
 	// Select the last pixel in the image as previous pixel because we will start with first pixel in the image
-	uchar previous_pixel = work.at<uchar>(7,7);
+	float previous_pixel;
+	resized.getpixel(7, 7, 0, &previous_pixel);
 
-	// Go over every pixel, starting at columns in each row
-	for(unsigned int rows = 0; rows < (unsigned int)size.height; rows++){
-		for(unsigned int columns = 0; columns < (unsigned int)size.width; columns++){
+	// Go over every pixel
+	for(ImageBuf::ConstIterator<float> it (resized); !it.done(); ++it){
 
-			// If even, go left to right, if odd, go right to left
-			unsigned int position = (rows % 2) == 0 ? columns : (size.width - columns - 1);
+		// Get luminance value of that pixel
+		float pixel = (0.2126 * it[0]) + (0.7152 * it[1]) + (0.0722 * it[2]); // https://en.wikipedia.org/wiki/Grayscale#Converting_color_to_grayscale
 
-			// Push back the hash string
-			hash <<= 1;
+		// set the value in the bit hash
+		hash->set(0, (previous_pixel < pixel ? false : true));
 
-			// Retrieve the pixel at the position
-			uchar pixel = work.at<uchar>(rows,position);
-
-			// Set the value in the rightmost postion in the hash string
-			hash.set(0, (previous_pixel < pixel ? false : true));
-
-			// Update the previous pixel string
-			previous_pixel = pixel;
-		}
+		// Shift hash
+		*hash <<= 1;
 	}
-
-	work.release();
 
 	return hash;
 }
 
-float Difference_Hash::compare_hashes(const bitset<64>& hash_one, const bitset<64>& hash_two){
+float Difference_Hash::compare(const Difference_Hash& hash_one, const Difference_Hash& hash_two){
 
 	// Get the hamming distance
-	unsigned int hamming_distance = bitset<64>(hash_one^hash_two).count();
+	unsigned int hamming_distance = bitset<64>(*(hash_one._hash) ^ *(hash_two._hash)).count();
 
 	// Determine the percentage based on hamming distance, longer distance will reduce the score
 	return 1.0 - (hamming_distance / 64.0f);
+}
+
+std::ostream& operator<<(std::ostream& os, const Difference_Hash &dh){
+    return os << "Difference Hash: " << *(dh._hash);
+}
+
+std::size_t Difference_Hash::hash() const{
+	return std::hash<bitset<64>>()(*_hash);
 }
